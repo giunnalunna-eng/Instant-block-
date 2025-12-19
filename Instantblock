@@ -1,0 +1,584 @@
+-- X1sqr BLOCKER - COMPACT CUBE UI v2
+-- Fixed Movement + Hide/Unhide Button
+
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- Cleanup
+if CoreGui:FindFirstChild("X1sqrBlockerGui") then
+    CoreGui:FindFirstChild("X1sqrBlockerGui"):Destroy()
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- COLORS
+-- ═══════════════════════════════════════════════════════════════
+local Colors = {
+    Background = Color3.fromRGB(12, 16, 24),
+    Header = Color3.fromRGB(18, 24, 36),
+    Card = Color3.fromRGB(22, 30, 45),
+    ButtonActive = Color3.fromRGB(0, 140, 255),
+    ButtonInactive = Color3.fromRGB(28, 38, 55),
+    Border = Color3.fromRGB(60, 90, 130),
+    TextPrimary = Color3.fromRGB(255, 255, 255),
+    TextSecondary = Color3.fromRGB(160, 175, 200),
+    Danger = Color3.fromRGB(200, 50, 50),
+}
+
+-- ═══════════════════════════════════════════════════════════════
+-- UTILITIES
+-- ═══════════════════════════════════════════════════════════════
+local function Tween(obj, props, duration)
+    TweenService:Create(obj, TweenInfo.new(duration or 0.15, Enum.EasingStyle.Quad), props):Play()
+end
+
+local function Lighten(c, a)
+    return Color3.fromRGB(math.min(255, c.R*255+a), math.min(255, c.G*255+a), math.min(255, c.B*255+a))
+end
+
+local function Darken(c, a)
+    return Color3.fromRGB(math.max(0, c.R*255-a), math.max(0, c.G*255-a), math.max(0, c.B*255-a))
+end
+
+local function AddHover(btn, normal, hover, click)
+    btn.MouseEnter:Connect(function() Tween(btn, {BackgroundColor3 = hover}) end)
+    btn.MouseLeave:Connect(function() Tween(btn, {BackgroundColor3 = normal}) end)
+    btn.MouseButton1Down:Connect(function() Tween(btn, {BackgroundColor3 = click}, 0.05) end)
+    btn.MouseButton1Up:Connect(function() Tween(btn, {BackgroundColor3 = hover}, 0.1) end)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- GUI SETUP
+-- ═══════════════════════════════════════════════════════════════
+local gui = Instance.new("ScreenGui")
+gui.Name = "X1sqrBlockerGui"
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = CoreGui
+
+-- Virtual Mouse
+local vMouse = Instance.new("ImageLabel")
+vMouse.Size = UDim2.new(0, 30, 0, 30)
+vMouse.AnchorPoint = Vector2.new(0.5, 0.5)
+vMouse.Image = "rbxassetid://299245550"
+vMouse.BackgroundTransparency = 1
+vMouse.ZIndex = 10000
+vMouse.Visible = false
+vMouse.Parent = gui
+
+-- ═══════════════════════════════════════════════════════════════
+-- HIDE/UNHIDE TOGGLE BUTTON (Always Visible)
+-- ═══════════════════════════════════════════════════════════════
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Name = "ToggleBtn"
+toggleBtn.Text = "▣"
+toggleBtn.Size = UDim2.new(0, 36, 0, 36)
+toggleBtn.Position = UDim2.new(0, 10, 0.5, -18)
+toggleBtn.BackgroundColor3 = Colors.ButtonActive
+toggleBtn.TextColor3 = Colors.TextPrimary
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 18
+toggleBtn.Parent = gui
+
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(0, 8)
+toggleCorner.Parent = toggleBtn
+
+local toggleStroke = Instance.new("UIStroke")
+toggleStroke.Color = Colors.Border
+toggleStroke.Thickness = 1
+toggleStroke.Transparency = 0.5
+toggleStroke.Parent = toggleBtn
+
+-- Toggle button hover
+toggleBtn.MouseEnter:Connect(function() 
+    Tween(toggleBtn, {BackgroundColor3 = Lighten(Colors.ButtonActive, 30), Size = UDim2.new(0, 40, 0, 40), Position = UDim2.new(0, 8, 0.5, -20)}) 
+end)
+toggleBtn.MouseLeave:Connect(function() 
+    Tween(toggleBtn, {BackgroundColor3 = Colors.ButtonActive, Size = UDim2.new(0, 36, 0, 36), Position = UDim2.new(0, 10, 0.5, -18)}) 
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- MAIN PANEL (CUBE FORM)
+-- ═══════════════════════════════════════════════════════════════
+local main = Instance.new("Frame")
+main.Name = "Main"
+main.Size = UDim2.new(0, 200, 0, 220)
+main.Position = UDim2.new(0, 55, 0.5, -110)
+main.BackgroundColor3 = Colors.Background
+main.BorderSizePixel = 0
+main.Parent = gui
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 12)
+mainCorner.Parent = main
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = Colors.Border
+mainStroke.Thickness = 1
+mainStroke.Transparency = 0.6
+mainStroke.Parent = main
+
+-- ═══════════════════════════════════════════════════════════════
+-- DRAGGING (Only on Header)
+-- ═══════════════════════════════════════════════════════════════
+local drag, dragIn, dragSt, startP
+
+-- ═══════════════════════════════════════════════════════════════
+-- HEADER (Drag Zone)
+-- ═══════════════════════════════════════════════════════════════
+local header = Instance.new("Frame")
+header.Name = "Header"
+header.Size = UDim2.new(1, 0, 0, 32)
+header.BackgroundColor3 = Colors.Header
+header.BorderSizePixel = 0
+header.Active = true
+header.Parent = main
+
+local hCorner = Instance.new("UICorner")
+hCorner.CornerRadius = UDim.new(0, 12)
+hCorner.Parent = header
+
+local hFix = Instance.new("Frame")
+hFix.Size = UDim2.new(1, 0, 0, 15)
+hFix.Position = UDim2.new(0, 0, 1, -15)
+hFix.BackgroundColor3 = Colors.Header
+hFix.BorderSizePixel = 0
+hFix.Parent = header
+
+-- Drag only from header
+header.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+        drag = true
+        dragSt = i.Position
+        startP = main.Position
+        i.Changed:Connect(function() 
+            if i.UserInputState == Enum.UserInputState.End then 
+                drag = false 
+            end 
+        end)
+    end
+end)
+
+header.InputChanged:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch then 
+        dragIn = i 
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(i)
+    if i == dragIn and drag then
+        local d = i.Position - dragSt
+        main.Position = UDim2.new(startP.X.Scale, startP.X.Offset + d.X, startP.Y.Scale, startP.Y.Offset + d.Y)
+    end
+end)
+
+-- Logo
+local logo = Instance.new("TextLabel")
+logo.Text = "▣"
+logo.Size = UDim2.new(0, 24, 0, 24)
+logo.Position = UDim2.new(0, 8, 0.5, -12)
+logo.BackgroundTransparency = 1
+logo.TextColor3 = Colors.ButtonActive
+logo.Font = Enum.Font.GothamBold
+logo.TextSize = 14
+logo.Parent = header
+
+-- Title
+local title = Instance.new("TextLabel")
+title.Text = "X1sqr Blocker"
+title.Size = UDim2.new(1, -65, 1, 0)
+title.Position = UDim2.new(0, 30, 0, 0)
+title.BackgroundTransparency = 1
+title.TextColor3 = Colors.TextPrimary
+title.Font = Enum.Font.GothamBold
+title.TextSize = 11
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = header
+
+-- Close Button
+local closeBtn = Instance.new("TextButton")
+closeBtn.Text = "×"
+closeBtn.Size = UDim2.new(0, 22, 0, 22)
+closeBtn.Position = UDim2.new(1, -27, 0.5, -11)
+closeBtn.BackgroundColor3 = Colors.Danger
+closeBtn.BackgroundTransparency = 0.7
+closeBtn.TextColor3 = Colors.TextPrimary
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 14
+closeBtn.Parent = header
+
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(1, 0)
+
+closeBtn.MouseEnter:Connect(function() Tween(closeBtn, {BackgroundTransparency = 0}) end)
+closeBtn.MouseLeave:Connect(function() Tween(closeBtn, {BackgroundTransparency = 0.7}) end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- BODY
+-- ═══════════════════════════════════════════════════════════════
+local body = Instance.new("Frame")
+body.Size = UDim2.new(1, -16, 1, -42)
+body.Position = UDim2.new(0, 8, 0, 36)
+body.BackgroundTransparency = 1
+body.Parent = main
+
+-- Top Row
+local topRow = Instance.new("Frame")
+topRow.Size = UDim2.new(1, 0, 0, 24)
+topRow.BackgroundTransparency = 1
+topRow.Parent = body
+
+-- Refresh Button (Blue)
+local btnRefresh = Instance.new("TextButton")
+btnRefresh.Text = "↻ Refresh"
+btnRefresh.Size = UDim2.new(0.48, 0, 1, 0)
+btnRefresh.BackgroundColor3 = Colors.ButtonActive
+btnRefresh.TextColor3 = Colors.TextPrimary
+btnRefresh.Font = Enum.Font.GothamBold
+btnRefresh.TextSize = 10
+btnRefresh.Parent = topRow
+Instance.new("UICorner", btnRefresh).CornerRadius = UDim.new(0, 6)
+AddHover(btnRefresh, Colors.ButtonActive, Lighten(Colors.ButtonActive, 25), Darken(Colors.ButtonActive, 15))
+
+-- Player Count
+local countBadge = Instance.new("Frame")
+countBadge.Size = UDim2.new(0.48, 0, 1, 0)
+countBadge.Position = UDim2.new(0.52, 0, 0, 0)
+countBadge.BackgroundColor3 = Colors.Card
+countBadge.Parent = topRow
+Instance.new("UICorner", countBadge).CornerRadius = UDim.new(0, 6)
+
+local countLabel = Instance.new("TextLabel")
+countLabel.Text = "👥 0 Players"
+countLabel.Size = UDim2.new(1, 0, 1, 0)
+countLabel.BackgroundTransparency = 1
+countLabel.TextColor3 = Colors.TextSecondary
+countLabel.Font = Enum.Font.GothamSemibold
+countLabel.TextSize = 10
+countLabel.Parent = countBadge
+
+-- ═══════════════════════════════════════════════════════════════
+-- SCROLL LIST
+-- ═══════════════════════════════════════════════════════════════
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, 0, 1, -60)
+scroll.Position = UDim2.new(0, 0, 0, 30)
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 3
+scroll.ScrollBarImageColor3 = Colors.ButtonActive
+scroll.ScrollBarImageTransparency = 0.5
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.Parent = body
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.Padding = UDim.new(0, 4)
+listLayout.Parent = scroll
+
+-- ═══════════════════════════════════════════════════════════════
+-- BOTTOM BUTTON
+-- ═══════════════════════════════════════════════════════════════
+local btnBlockAll = Instance.new("TextButton")
+btnBlockAll.Text = "⚡ BLOCK ALL"
+btnBlockAll.Size = UDim2.new(1, 0, 0, 26)
+btnBlockAll.Position = UDim2.new(0, 0, 1, -26)
+btnBlockAll.BackgroundColor3 = Colors.Danger
+btnBlockAll.TextColor3 = Colors.TextPrimary
+btnBlockAll.Font = Enum.Font.GothamBold
+btnBlockAll.TextSize = 11
+btnBlockAll.Parent = body
+Instance.new("UICorner", btnBlockAll).CornerRadius = UDim.new(0, 8)
+AddHover(btnBlockAll, Colors.Danger, Lighten(Colors.Danger, 30), Darken(Colors.Danger, 20))
+
+-- ═══════════════════════════════════════════════════════════════
+-- CORE LOGIC (FIXED - No Movement Block)
+-- ═══════════════════════════════════════════════════════════════
+local isBusy = false
+local originalCameraType = nil
+local originalMouseBehavior = nil
+
+local function SaveControlState()
+    originalCameraType = workspace.CurrentCamera.CameraType
+    originalMouseBehavior = UserInputService.MouseBehavior
+end
+
+local function RestoreControls()
+    isBusy = false
+    vMouse.Visible = false
+    
+    -- Restore camera
+    if originalCameraType then
+        workspace.CurrentCamera.CameraType = originalCameraType
+    else
+        workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+    end
+    
+    -- Restore mouse
+    if originalMouseBehavior then
+        UserInputService.MouseBehavior = originalMouseBehavior
+    else
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+    end
+    
+    UserInputService.MouseIconEnabled = true
+    
+    -- Fix mobile controls
+    pcall(function()
+        local plGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if plGui then
+            local touch = plGui:FindFirstChild("TouchGui")
+            if touch then 
+                touch.Enabled = false 
+                task.wait() 
+                touch.Enabled = true 
+            end
+        end
+    end)
+    
+    -- Force character control restore
+    pcall(function()
+        local character = LocalPlayer.Character
+        if character then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.WalkSpeed = humanoid.WalkSpeed -- Refresh
+            end
+        end
+    end)
+end
+
+local function PerformInstantBlock()
+    local vp = Camera.ViewportSize
+    local cx, cy = vp.X / 2, vp.Y / 2 + 20
+    
+    vMouse.Position = UDim2.new(0, cx, 0, cy)
+    vMouse.Visible = true
+    
+    -- Quick click
+    VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, true, game, 1)
+    task.wait()
+    VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, false, game, 1)
+    
+    -- Immediate restore
+    task.wait(0.05)
+    RestoreControls()
+end
+
+local function BlockPlayer(plr)
+    if isBusy then return end
+    isBusy = true
+    
+    -- Save current state
+    SaveControlState()
+    
+    -- Safety timeout
+    task.delay(1.2, function()
+        if isBusy then
+            RestoreControls()
+        end
+    end)
+    
+    local success = pcall(function()
+        StarterGui:SetCore("PromptBlockPlayer", plr)
+    end)
+    
+    if success then
+        task.wait(0.35)
+        PerformInstantBlock()
+    else
+        RestoreControls()
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- PLAYER CARDS
+-- ═══════════════════════════════════════════════════════════════
+local function CreatePlayerCard(plr)
+    if plr == LocalPlayer then return end
+    
+    local card = Instance.new("Frame")
+    card.Name = plr.Name
+    card.Size = UDim2.new(1, 0, 0, 34)
+    card.BackgroundColor3 = Colors.Card
+    card.BorderSizePixel = 0
+    card.Parent = scroll
+    
+    Instance.new("UICorner", card).CornerRadius = UDim.new(0, 6)
+    
+    -- Avatar
+    local avatar = Instance.new("ImageLabel")
+    avatar.Size = UDim2.new(0, 26, 0, 26)
+    avatar.Position = UDim2.new(0, 4, 0.5, -13)
+    avatar.BackgroundColor3 = Colors.ButtonInactive
+    avatar.Parent = card
+    Instance.new("UICorner", avatar).CornerRadius = UDim.new(1, 0)
+    
+    task.spawn(function()
+        pcall(function()
+            avatar.Image = Players:GetUserThumbnailAsync(plr.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
+        end)
+    end)
+    
+    -- Name
+    local name = Instance.new("TextLabel")
+    name.Text = plr.DisplayName
+    name.Size = UDim2.new(1, -90, 1, 0)
+    name.Position = UDim2.new(0, 34, 0, 0)
+    name.BackgroundTransparency = 1
+    name.TextColor3 = Colors.TextPrimary
+    name.Font = Enum.Font.GothamSemibold
+    name.TextSize = 11
+    name.TextXAlignment = Enum.TextXAlignment.Left
+    name.TextTruncate = Enum.TextTruncate.AtEnd
+    name.Parent = card
+    
+    -- Block Button
+    local blockBtn = Instance.new("TextButton")
+    blockBtn.Text = "BLOCK"
+    blockBtn.Size = UDim2.new(0, 50, 0, 24)
+    blockBtn.Position = UDim2.new(1, -54, 0.5, -12)
+    blockBtn.BackgroundColor3 = Colors.Danger
+    blockBtn.TextColor3 = Colors.TextPrimary
+    blockBtn.Font = Enum.Font.GothamBold
+    blockBtn.TextSize = 9
+    blockBtn.Parent = card
+    Instance.new("UICorner", blockBtn).CornerRadius = UDim.new(0, 5)
+    AddHover(blockBtn, Colors.Danger, Lighten(Colors.Danger, 30), Darken(Colors.Danger, 20))
+    
+    blockBtn.MouseButton1Click:Connect(function()
+        if isBusy then return end
+        
+        local originalText = blockBtn.Text
+        blockBtn.Text = "..."
+        blockBtn.BackgroundColor3 = Colors.ButtonInactive
+        
+        BlockPlayer(plr)
+        
+        task.wait(1.5)
+        if blockBtn.Parent then
+            blockBtn.Text = originalText
+            blockBtn.BackgroundColor3 = Colors.Danger
+        end
+    end)
+    
+    -- Card hover
+    card.MouseEnter:Connect(function() Tween(card, {BackgroundColor3 = Lighten(Colors.Card, 10)}) end)
+    card.MouseLeave:Connect(function() Tween(card, {BackgroundColor3 = Colors.Card}) end)
+end
+
+local function RefreshList()
+    for _, v in pairs(scroll:GetChildren()) do
+        if v:IsA("Frame") then v:Destroy() end
+    end
+    
+    local count = 0
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            CreatePlayerCard(p)
+            count = count + 1
+        end
+    end
+    
+    countLabel.Text = "👥 " .. count .. " Players"
+    task.wait()
+    scroll.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 5)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- HIDE/SHOW TOGGLE
+-- ═══════════════════════════════════════════════════════════════
+local isVisible = true
+
+local function ToggleVisibility()
+    isVisible = not isVisible
+    
+    if isVisible then
+        main.Visible = true
+        Tween(main, {Position = UDim2.new(0, 55, 0.5, -110)}, 0.25)
+        Tween(toggleBtn, {BackgroundColor3 = Colors.ButtonActive})
+        toggleBtn.Text = "▣"
+    else
+        Tween(main, {Position = UDim2.new(0, -220, 0.5, -110)}, 0.25)
+        task.wait(0.25)
+        main.Visible = false
+        Tween(toggleBtn, {BackgroundColor3 = Colors.ButtonInactive})
+        toggleBtn.Text = "▢"
+    end
+end
+
+toggleBtn.MouseButton1Click:Connect(ToggleVisibility)
+
+-- ═══════════════════════════════════════════════════════════════
+-- CONNECTIONS
+-- ═══════════════════════════════════════════════════════════════
+closeBtn.MouseButton1Click:Connect(function()
+    Tween(main, {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0, 55, 0.5, 0)}, 0.2)
+    Tween(toggleBtn, {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0, 28, 0.5, 0)}, 0.2)
+    task.wait(0.2)
+    gui:Destroy()
+    RestoreControls()
+end)
+
+btnRefresh.MouseButton1Click:Connect(function()
+    btnRefresh.Text = "..."
+    task.wait(0.1)
+    RefreshList()
+    btnRefresh.Text = "↻ Refresh"
+end)
+
+btnBlockAll.MouseButton1Click:Connect(function()
+    if isBusy then return end
+    
+    local originalText = btnBlockAll.Text
+    btnBlockAll.Text = "Blocking..."
+    
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            BlockPlayer(p)
+            task.wait(1.8)
+        end
+    end
+    
+    btnBlockAll.Text = originalText
+end)
+
+Players.PlayerAdded:Connect(function() task.wait(1) RefreshList() end)
+Players.PlayerRemoving:Connect(function() task.wait(1) RefreshList() end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- KEYBOARD SHORTCUT (Press 'P' to toggle)
+-- ═══════════════════════════════════════════════════════════════
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.P then
+        ToggleVisibility()
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- INIT
+-- ═══════════════════════════════════════════════════════════════
+main.Size = UDim2.new(0, 0, 0, 0)
+main.Position = UDim2.new(0, 55, 0.5, 0)
+toggleBtn.Size = UDim2.new(0, 0, 0, 0)
+toggleBtn.Position = UDim2.new(0, 28, 0.5, 0)
+
+task.wait(0.1)
+
+-- Animate in
+Tween(toggleBtn, {Size = UDim2.new(0, 36, 0, 36), Position = UDim2.new(0, 10, 0.5, -18)}, 0.3)
+task.wait(0.15)
+Tween(main, {Size = UDim2.new(0, 200, 0, 220), Position = UDim2.new(0, 55, 0.5, -110)}, 0.3)
+task.wait(0.35)
+
+RefreshList()
+RestoreControls()
+
+print("▣ X1sqr Blocker v2 Loaded!")
+print("💡 Press 'P' to toggle visibility")
